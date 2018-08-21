@@ -1,4 +1,4 @@
-package esdb
+package snapsource
 
 import (
 	"context"
