@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package pb;
+
+message CreateUser {
+  string ID = 1;
+  string Name = 4;
+  string Email = 5;
+}
+
+message UpdateEmail {
+  string ID = 1;
+  string NewEmail = 2;
+}
+

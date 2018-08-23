@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"io"
 	"testing"
 	"time"
 
@@ -11,8 +12,18 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
+	"github.com/pkg/errors"
+	"github.com/savaki/snapsource"
 	"github.com/tj/assert"
 )
+
+func TestIsNotFound(t *testing.T) {
+	assert.True(t, IsNotFound(errNotFound))
+	assert.True(t, IsNotFound(errors.Wrap(errNotFound, "1")))
+	assert.True(t, IsNotFound(errors.Wrap(errors.Wrap(errNotFound, "1"), "2")))
+	assert.False(t, IsNotFound(io.EOF))
+	assert.False(t, IsNotFound(nil))
+}
 
 func withTable(t *testing.T, callback func(api *dynamodb.DynamoDB, tableName string)) {
 	s, err := session.NewSession(&aws.Config{
@@ -62,7 +73,7 @@ func withTable(t *testing.T, callback func(api *dynamodb.DynamoDB, tableName str
 	callback(api, tableName)
 }
 
-func TestSample(t *testing.T) {
+func TestLifecycle(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("create then update", func(t *testing.T) {
@@ -108,4 +119,9 @@ func TestSample(t *testing.T) {
 			assert.True(t, ok)
 		})
 	})
+}
+
+func TestImplementsCommandHandler(t *testing.T) {
+	var h snapsource.CommandHandler = &Handler{}
+	assert.NotNil(t, h)
 }

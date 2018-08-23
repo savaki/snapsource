@@ -14,7 +14,7 @@ type Event interface {
 	AggregateID() string
 
 	// EventVersion contains the version number of this event
-	EventVersion() int
+	EventVersion() int32
 
 	// EventAt indicates when the event occurred
 	EventAt() time.Time

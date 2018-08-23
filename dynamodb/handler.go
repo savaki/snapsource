@@ -14,6 +14,10 @@ type Handler struct {
 	dao     Store
 }
 
+func (h *Handler) Load(ctx context.Context, id string, v interface{}) (snapsource.Meta, error) {
+	return h.dao.Load(ctx, id, v)
+}
+
 func (h *Handler) Apply(ctx context.Context, command snapsource.Command) ([]snapsource.Event, error) {
 	state, ok, err := h.dao.get(ctx, command.AggregateID())
 	if err != nil {
@@ -66,6 +70,19 @@ type Config struct {
 }
 
 func New(config Config) (*Handler, error) {
+	if config.API == nil {
+		return nil, errors.Errorf("API not set")
+	}
+	if config.TableName == "" {
+		return nil, errors.Errorf("TableName not set")
+	}
+	if config.Serializer == nil {
+		return nil, errors.Errorf("Serializer not set")
+	}
+	if config.Factory == nil {
+		return nil, errors.Errorf("Factory not set")
+	}
+
 	return &Handler{
 		factory: config.Factory,
 		dao: Store{
