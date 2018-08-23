@@ -1,4 +1,4 @@
-package dynamodb
+package dynamo
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/neelance/graphql-go/errors"
 	"github.com/savaki/snapsource"
-	"github.com/savaki/snapsource/dynamodb/testdata/pb"
+	"github.com/savaki/snapsource/dynamo/testdata/pb"
 	"github.com/tj/assert"
 )
 
