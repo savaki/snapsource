@@ -31,11 +31,11 @@ func NewSerializer() snapsource.Serializer {
 }
 
 func (m *UserCreated) AggregateID() string { return m.ID }
-func (m *UserCreated) EventVersion() int32 { return m.Version }
+func (m *UserCreated) EventVersion() int   { return int(m.Version) }
 func (m *UserCreated) EventAt() time.Time  { return time.Unix(m.At, 0) }
 
 func (m *EmailUpdated) AggregateID() string { return m.ID }
-func (m *EmailUpdated) EventVersion() int32 { return m.Version }
+func (m *EmailUpdated) EventVersion() int   { return int(m.Version) }
 func (m *EmailUpdated) EventAt() time.Time  { return time.Unix(m.At, 0) }
 
 
@@ -171,10 +171,10 @@ type Builder struct {
 	Events  []snapsource.Event
 }
 
-func NewBuilder(id string, version int32) *Builder {
+func NewBuilder(id string, version int) *Builder {
 	return &Builder {
 		id:      id,
-		version: version,
+		version: int32(version),
 	}
 }
 

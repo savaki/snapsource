@@ -44,7 +44,7 @@ func NewSerializer() snapsource.Serializer {
 }
 {{ range .Fields }}
 func (m *{{ .TypeName | base | camel }}) AggregateID() string { return m.{{ id .TypeName $Events }} }
-func (m *{{ .TypeName | base | camel }}) EventVersion() int32 { return m.Version }
+func (m *{{ .TypeName | base | camel }}) EventVersion() int   { return int(m.Version) }
 func (m *{{ .TypeName | base | camel }}) EventAt() time.Time  { return time.Unix(m.At, 0) }
 {{ end }}
 
@@ -173,10 +173,10 @@ type Builder struct {
 	Events  []snapsource.Event
 }
 
-func NewBuilder(id string, version int32) *Builder {
+func NewBuilder(id string, version int) *Builder {
 	return &Builder {
 		id:      id,
-		version: version,
+		version: int32(version),
 	}
 }
 

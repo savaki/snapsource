@@ -225,7 +225,7 @@ func (s Store) update(ctx context.Context, in updateIn) error {
 		},
 		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
 			":one":     {N: aws.String("1")},
-			":version": {N: aws.String(strconv.Itoa(in.Version))},
+			":version": {N: aws.String(strconv.Itoa(int(in.Version)))},
 			":uat":     {S: aws.String(time.Now().Format(dateLayout))},
 			":payload": getOrNull(in.Payload),
 			":events":  getOrNull(events),

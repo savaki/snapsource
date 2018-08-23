@@ -14,7 +14,7 @@ import (
 )
 
 type User struct {
-	Version int32
+	Version int
 	Name    string
 	Email   string
 }
@@ -90,7 +90,7 @@ func TestHandler(t *testing.T) {
 		assert.True(t, time.Now().Sub(meta.CreatedAt) < 3*time.Second)
 		assert.True(t, time.Now().Sub(meta.UpdatedAt) < 3*time.Second)
 
-		assert.EqualValues(t, 2, user.Version)
+		assert.Equal(t, 2, user.Version)
 		assert.Equal(t, "Joe Public", user.Name)
 		assert.Equal(t, "joe.public@example.com", user.Email)
 	})

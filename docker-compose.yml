@@ -4,3 +4,13 @@ services:
     image: savaki/dynamodb:latest
     ports:
     - "8000:8000"
+
+  mysql:
+    image: mysql:5.7
+    ports:
+    - "3306:3306"
+    environment:
+    - MYSQL_USER=snapsource
+    - MYSQL_PASSWORD=password
+    - MYSQL_ROOT_PASSWORD=password
+    - MYSQL_DATABASE=snapsource
