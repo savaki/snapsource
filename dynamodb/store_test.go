@@ -1,10 +1,9 @@
-package snapsource
+package dynamodb
 
 import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"fmt"
 	"testing"
 	"time"
 
@@ -68,7 +67,7 @@ func TestSample(t *testing.T) {
 
 	t.Run("create then update", func(t *testing.T) {
 		withTable(t, func(api *dynamodb.DynamoDB, tableName string) {
-			d := dao{
+			d := Store{
 				api:       api,
 				tableName: tableName,
 			}
@@ -85,7 +84,7 @@ func TestSample(t *testing.T) {
 			err = d.create(ctx, want)
 			assert.NotNil(t, err) // duplicates should be prevented
 
-			got, ok, err := d.Get(ctx, want.ID)
+			got, ok, err := d.get(ctx, want.ID)
 			assert.Nil(t, err)
 			assert.True(t, ok)
 			assert.Equal(t, 1, got.Version)
@@ -97,9 +96,6 @@ func TestSample(t *testing.T) {
 
 			// update ----------------------
 
-			time.Sleep(3 * time.Second)
-
-			fmt.Println("woot")
 			err = d.update(ctx, updateIn{
 				ID:      want.ID,
 				Version: got.Version,
@@ -107,8 +103,7 @@ func TestSample(t *testing.T) {
 			})
 			assert.Nil(t, err)
 
-			fmt.Println("wah")
-			got, ok, err = d.Get(ctx, want.ID)
+			got, ok, err = d.get(ctx, want.ID)
 			assert.Nil(t, err)
 			assert.True(t, ok)
 		})

@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package pb;
+
+message UserCreated {
+  string ID = 1;
+  int32 Version = 2;
+  int64 At = 3;
+  string Name = 4;
+}
+
+message Payload {
+  int32 Type = 1;
+  UserCreated T1 = 2;
+}
+

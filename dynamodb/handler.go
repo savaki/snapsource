@@ -1,49 +1,54 @@
-package snapsource
+package dynamodb
 
 import (
 	"context"
-	"reflect"
 
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbiface"
 	"github.com/pkg/errors"
+	"github.com/savaki/snapsource"
 )
 
 type Handler struct {
-	prototype reflect.Type
-	dao       dao
+	factory snapsource.Factory
+	dao     Store
 }
 
-func (h *Handler) Apply(ctx context.Context, command Command) ([]Event, error) {
-	state, ok, err := h.dao.Get(ctx, command.AggregateID())
+func (h *Handler) Apply(ctx context.Context, command snapsource.Command) ([]snapsource.Event, error) {
+	state, ok, err := h.dao.get(ctx, command.AggregateID())
 	if err != nil {
 		return nil, err
 	}
 
-	v := reflect.New(h.prototype).Elem().Interface()
+	v := h.factory(command.AggregateID())
 	if ok {
 		if err := dynamodbattribute.Unmarshal(state.Payload, v); err != nil {
 			return nil, errors.Wrapf(err, "unable to unmarshal payload")
 		}
 	}
 
-	handler := v.(CommandHandler)
+	handler := v.(snapsource.CommandHandler)
 	events, err := handler.Apply(ctx, command)
 	if err != nil {
 		return nil, err
 	}
 
-	aggregate := v.(Aggregate)
+	aggregate := v.(snapsource.Aggregate)
 	for _, event := range events {
 		if err := aggregate.On(event); err != nil {
 			return nil, err
 		}
 	}
 
+	item, err := dynamodbattribute.Marshal(aggregate)
+	if err != nil {
+		return nil, errors.Wrapf(err, "unable to marshal aggregate, %#v", aggregate)
+	}
+
 	in := upsertIn{
-		ID:      state.ID,
+		ID:      command.AggregateID(),
 		Version: state.Version,
-		Payload: nil,
+		Payload: item,
 		Events:  events,
 	}
 	if err := h.dao.upsert(ctx, in); err != nil {
@@ -56,22 +61,14 @@ func (h *Handler) Apply(ctx context.Context, command Command) ([]Event, error) {
 type Config struct {
 	API        dynamodbiface.DynamoDBAPI
 	TableName  string
-	Serializer Serializer
-	Prototype  reflect.Type
+	Serializer snapsource.Serializer
+	Factory    snapsource.Factory
 }
 
 func New(config Config) (*Handler, error) {
-	v := reflect.New(config.Prototype).Elem().Interface()
-	if _, ok := v.(CommandHandler); !ok {
-		return nil, errors.Errorf("%#v must implement CommandHandler", v)
-	}
-	if _, ok := v.(Aggregate); !ok {
-		return nil, errors.Errorf("%#v must implement Aggregate", v)
-	}
-
 	return &Handler{
-		prototype: config.Prototype,
-		dao: dao{
+		factory: config.Factory,
+		dao: Store{
 			api:        config.API,
 			tableName:  config.TableName,
 			serializer: config.Serializer,

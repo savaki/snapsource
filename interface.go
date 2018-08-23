@@ -35,6 +35,15 @@ type Aggregate interface {
 	On(event Event) error
 }
 
+// Prototype defines the requirements for the archetype struct
+type Prototype interface {
+	Aggregate
+	CommandHandler
+}
+
+// FactoryFunc generates new prototype instances
+type Factory func(id string) Prototype
+
 // CommandHandler consumes a command and emits Events
 type CommandHandler interface {
 	// Apply applies a command to an aggregate to generate a new set of events
@@ -48,4 +57,18 @@ type Serializer interface {
 
 	// UnmarshalEvent converts a []byte back into an Event
 	UnmarshalEvent(data []byte) (Event, error)
+}
+
+// Meta contains the metadata about the record
+type Meta struct {
+	ID        string    // ID holds the aggregate id
+	Version   int       // Version holds current version number
+	UpdatedAt time.Time // UpdatedAt of record
+	CreatedAt time.Time // CreatedAt of record
+}
+
+// Loader loads a specific record
+type Loader interface {
+	// Load the record with the specified aggregate id
+	Load(ctx context.Context, id string, v interface{}) (Meta, error)
 }

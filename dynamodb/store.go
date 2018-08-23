@@ -1,4 +1,4 @@
-package snapsource
+package dynamodb
 
 import (
 	"context"
@@ -7,8 +7,10 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
+	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbiface"
 	"github.com/pkg/errors"
+	"github.com/savaki/snapsource"
 )
 
 const (
@@ -24,7 +26,7 @@ const (
 	dateLayout = time.RFC3339
 )
 
-type state struct {
+type record struct {
 	ID        string
 	Version   int
 	CreatedAt time.Time
@@ -32,7 +34,7 @@ type state struct {
 	Payload   *dynamodb.AttributeValue
 }
 
-func (s *state) Unmarshal(item map[string]*dynamodb.AttributeValue) error {
+func (s *record) Unmarshal(item map[string]*dynamodb.AttributeValue) error {
 	if item == nil {
 		return nil
 	}
@@ -57,7 +59,7 @@ func (s *state) Unmarshal(item map[string]*dynamodb.AttributeValue) error {
 		return err
 	}
 
-	value := state{
+	value := record{
 		ID:        id,
 		Version:   version,
 		CreatedAt: createdAt,
@@ -69,40 +71,81 @@ func (s *state) Unmarshal(item map[string]*dynamodb.AttributeValue) error {
 	return nil
 }
 
-type dao struct {
-	api        dynamodbiface.DynamoDBAPI
-	tableName  string
-	serializer Serializer
+var errNotFound = errors.New("record not found")
+
+type causer interface {
+	Cause() error
 }
 
-func (d dao) Get(ctx context.Context, id string) (state, bool, error) {
+func IsNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	if err == errNotFound {
+		return true
+	}
+	if v, ok := err.(causer); ok {
+		return IsNotFound(v.Cause())
+	}
+
+	return false
+}
+
+type Store struct {
+	api        dynamodbiface.DynamoDBAPI
+	tableName  string
+	serializer snapsource.Serializer
+}
+
+func (s Store) Load(ctx context.Context, id string, v interface{}) (snapsource.Meta, error) {
+	r, ok, err := s.get(ctx, id)
+	if err != nil {
+		return snapsource.Meta{}, err
+	}
+	if !ok {
+		return snapsource.Meta{}, errNotFound
+	}
+
+	if err := dynamodbattribute.Unmarshal(r.Payload, v); err != nil {
+		return snapsource.Meta{}, errors.Wrapf(err, "unable to unmarshal record")
+	}
+
+	return snapsource.Meta{
+		ID:        r.ID,
+		Version:   r.Version,
+		CreatedAt: r.CreatedAt,
+		UpdatedAt: r.UpdatedAt,
+	}, nil
+}
+
+func (s Store) get(ctx context.Context, id string) (record, bool, error) {
 	input := dynamodb.GetItemInput{
-		TableName:      aws.String(d.tableName),
+		TableName:      aws.String(s.tableName),
 		ConsistentRead: aws.Bool(true),
 		Key: map[string]*dynamodb.AttributeValue{
 			fieldID: {S: aws.String(id)},
 		},
 	}
-	out, err := d.api.GetItemWithContext(ctx, &input)
+	out, err := s.api.GetItemWithContext(ctx, &input)
 	if err != nil {
-		return state{}, false, errors.Wrapf(err, "unable to retrieve item from %v, id: %v", d.tableName)
+		return record{}, false, errors.Wrapf(err, "unable to retrieve item from %v, id: %v", s.tableName)
 	}
 	if len(out.Item) == 0 {
-		return state{}, false, nil
+		return record{}, false, nil
 	}
 
-	var v state
+	var v record
 	if err := v.Unmarshal(out.Item); err != nil {
-		return state{}, false, err
+		return record{}, false, err
 	}
 
 	return v, true, nil
 }
 
-func (d dao) marshalEvents(events []Event) (*dynamodb.AttributeValue, error) {
+func (s Store) marshalEvents(events []snapsource.Event) (*dynamodb.AttributeValue, error) {
 	var datum [][]byte
 	for _, event := range events {
-		data, err := d.serializer.MarshalEvent(event)
+		data, err := s.serializer.MarshalEvent(event)
 		if err != nil {
 			return nil, err
 		}
@@ -119,11 +162,11 @@ func (d dao) marshalEvents(events []Event) (*dynamodb.AttributeValue, error) {
 type createIn struct {
 	ID      string
 	Payload *dynamodb.AttributeValue
-	Events  []Event
+	Events  []snapsource.Event
 }
 
-func (d dao) create(ctx context.Context, in createIn) error {
-	events, err := d.marshalEvents(in.Events)
+func (s Store) create(ctx context.Context, in createIn) error {
+	events, err := s.marshalEvents(in.Events)
 	if err != nil {
 		return err
 	}
@@ -139,14 +182,14 @@ func (d dao) create(ctx context.Context, in createIn) error {
 	}
 
 	input := dynamodb.PutItemInput{
-		TableName:           aws.String(d.tableName),
+		TableName:           aws.String(s.tableName),
 		Item:                item,
 		ConditionExpression: aws.String("attribute_not_exists(#id)"),
 		ExpressionAttributeNames: map[string]*string{
 			"#id": aws.String(fieldID),
 		},
 	}
-	if _, err := d.api.PutItemWithContext(ctx, &input); err != nil {
+	if _, err := s.api.PutItemWithContext(ctx, &input); err != nil {
 		return errors.Wrapf(err, "unable to save record")
 	}
 
@@ -157,17 +200,17 @@ type updateIn struct {
 	ID      string
 	Version int
 	Payload *dynamodb.AttributeValue
-	Events  []Event
+	Events  []snapsource.Event
 }
 
-func (d dao) update(ctx context.Context, in updateIn) error {
-	events, err := d.marshalEvents(in.Events)
+func (s Store) update(ctx context.Context, in updateIn) error {
+	events, err := s.marshalEvents(in.Events)
 	if err != nil {
 		return errors.Wrapf(err, "unable to marshal payload")
 	}
 
 	input := dynamodb.UpdateItemInput{
-		TableName: aws.String(d.tableName),
+		TableName: aws.String(s.tableName),
 		Key: map[string]*dynamodb.AttributeValue{
 			fieldID: {S: aws.String(in.ID)},
 		},
@@ -188,7 +231,8 @@ func (d dao) update(ctx context.Context, in updateIn) error {
 			":events":  getOrNull(events),
 		},
 	}
-	if _, err := d.api.UpdateItemWithContext(ctx, &input); err != nil {
+
+	if _, err := s.api.UpdateItemWithContext(ctx, &input); err != nil {
 		return errors.Wrapf(err, "unable to save record")
 	}
 
@@ -199,18 +243,18 @@ type upsertIn struct {
 	ID      string
 	Version int
 	Payload *dynamodb.AttributeValue
-	Events  []Event
+	Events  []snapsource.Event
 }
 
-func (d dao) upsert(ctx context.Context, in upsertIn) error {
-	if in.Version == 1 {
-		return d.create(ctx, createIn{
+func (s Store) upsert(ctx context.Context, in upsertIn) error {
+	if in.Version == 0 {
+		return s.create(ctx, createIn{
 			ID:      in.ID,
 			Payload: in.Payload,
 			Events:  in.Events,
 		})
 	} else {
-		return d.update(ctx, updateIn{
+		return s.update(ctx, updateIn{
 			ID:      in.ID,
 			Version: in.Version,
 			Payload: in.Payload,
